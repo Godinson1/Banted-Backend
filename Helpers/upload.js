@@ -1,8 +1,6 @@
-import util from "util";
-import { storage } from "../config";
-import { UploadedFile } from "express-fileupload";
-
-const bucket = storage.bucket("bizz_bucket");
+const util = require("util");
+const { storage } = require("../config");
+const bucket = storage.bucket("banted-storage");
 
 /**
  *
@@ -13,11 +11,15 @@ const bucket = storage.bucket("bizz_bucket");
  *   name of file and buffer
  */
 
-export const uploadImage = (file) =>
+const uploadImage = (file, type) =>
   new Promise((resolve, reject) => {
     const { name, data } = file;
 
-    const blob = bucket.file(name.replace(/ /g, "_"));
+    const blob = bucket.file(
+      type === "profile"
+        ? "profile/" + name.replace(/ /g, "_")
+        : "banterImages/" + name.replace(/ /g, "_")
+    );
     const blobStream = blob.createWriteStream({
       resumable: false,
       gzip: true,
@@ -35,3 +37,7 @@ export const uploadImage = (file) =>
       })
       .end(data);
   });
+
+module.exports = {
+  uploadImage,
+};

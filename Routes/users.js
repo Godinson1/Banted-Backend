@@ -7,8 +7,9 @@ const auth = require("../middleware/auth");
 const Follow = require("../models/followModel");
 const Banter = require("../models/bantModel");
 const Like = require("../models/likeModel");
-const { upload } = require("../Helpers/multer");
+
 const { isEmail } = require("../Helpers/helper");
+const { success, error, handleResponse, uploadImage } = require("../Helpers");
 
 //Get authenticated user
 router.route("/").get(auth, async (req, res) => {
@@ -318,35 +319,6 @@ router.route("/unfollow/:handle").get(auth, async (req, res) => {
   }
 });
 
-//Upload profile picture
-router.post(
-  "/:id/profile-image",
-  upload.single("userImage"),
-  auth,
-  async (req, res) => {
-    //Store file in variable profileImage
-    const profileImage = req.file;
-    console.log("helo");
-
-    //Check if param id equals logged in user id - If not return error
-    if (req.params.id !== req.user.id)
-      return res.status(401).json({ message: "Unauthorized" });
-
-    try {
-      //Find user by id and update with uploaded file name
-      const user = await User.findById(req.params.id);
-      user.userImage = profileImage.filename;
-      await user.save();
-      return res
-        .status(200)
-        .json({ message: "Profile Image Updated Successfully!" });
-    } catch (err) {
-      console.log(err);
-      return res.status(500).json({ error: "Something went wrong!" });
-    }
-  }
-);
-
 //Get Banters for Authenticated User's timeline
 router.route("/user/timeline").get(auth, async (req, res) => {
   try {
@@ -374,6 +346,49 @@ router.route("/user/timeline").get(auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Something went wrong.." });
+  }
+});
+
+/*
+ * NAME - updateProfilePhoto
+ * @REQUEST METHOD - PUT
+ * AIM - Update user's profile photo
+ * Confirm authenticated user and update profile photo
+ */
+router.post("/:id/profile-image", auth, async (req, res) => {
+  let userData;
+  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  console.log(req.files);
+  try {
+    if (!req.files || req.files === null || Object.keys(req.files).length === 0)
+      return handleResponse(res, error, 400, `Please select a photo`);
+
+    if (req.files.profile_image) {
+      const image = req.files.profile_image;
+      if (!prefferedTypes.includes(image.mimetype))
+        return handleResponse(
+          res,
+          error,
+          BAD_REQUEST,
+          "Please select a valid photo"
+        );
+      //Upload image
+      const url = await uploadImage(image, "profile");
+      //Find authenticated user and update photo here
+      userData = await User.findById(req.params.id);
+      userData.userImage = url;
+      const data = await userData.save();
+      return res.status(200).json({
+        status: success,
+        message: "Profile photo updated successfully..",
+        data,
+      });
+    } else {
+      return handleResponse(res, error, 400, `Please select a photo`);
+    }
+  } catch (err) {
+    console.log(err);
+    return handleResponse(res, error, 500, "Something went wrong");
   }
 });
 

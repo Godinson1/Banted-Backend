@@ -3,23 +3,32 @@ const Banter = require("../models/bantModel");
 const auth = require("../middleware/auth");
 const Comment = require("../models/commentModel");
 const Like = require("../models/likeModel");
-const { uploadMultiple } = require("../Helpers/multer");
+const { success, error, handleResponse, uploadImage } = require("../Helpers");
 
 //To upload banter
-router.post(
-  "/banter",
-  uploadMultiple.array("banterImage", 4),
-  auth,
-  (req, res) => {
-    const reqFiles = [];
+router.post("/banter", auth, async (req, res) => {
+  const reqFiles = [];
+  if (req.body.banter === "")
+    return res.status(400).json({ msg: "Banter cannot be empty" });
 
-    //If empty field - return eror
-    if (req.body.banter === "")
-      return res.status(400).json({ msg: "Banter cannot be empty" });
-
-    //Map through each file and push customize path to Array - reqFiles
-    for (var i = 0; i < req.files.length; i++) {
-      reqFiles.push("/BantedImages/BanterImages/" + req.files[i].filename);
+  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  if (!req.files || req.files === null || Object.keys(req.files).length === 0)
+    return handleResponse(res, error, 400, `Please select a photo`);
+  const image = req.files.banterImage;
+  if (image) {
+    if (!Array.isArray(image)) {
+      if (!prefferedTypes.includes(image.mimetype))
+        return handleResponse(res, error, 400, "Please select a valid photo");
+      const url = await uploadImage(image, "banter");
+      reqFiles.push(url);
+    } else {
+      //Map through each file and push customize path to Array - reqFiles
+      for (var i = 0; i < req.files.banterImage.length; i++) {
+        if (!prefferedTypes.includes(image[i].mimetype))
+          return handleResponse(res, error, 400, "Please select a valid photo");
+        const url = await uploadImage(image[i], "banter");
+        reqFiles.push(url);
+      }
     }
 
     //Create new banter
@@ -35,22 +44,21 @@ router.post(
     };
     const newBant = new Banter(newBanter);
 
-    //Save bant to database
-    newBant
-      .save()
-      .then((data) =>
-        res.json({
-          data,
-          message: "Banter uploaded successfully",
-          status: "success",
-        })
-      )
-      .catch((err) => {
-        console.log(err);
-        return res.status(500).json({ msg: "Something went Wrong" });
+    try {
+      const data = await newBant.save();
+      res.json({
+        data,
+        message: "Banter uploaded successfully",
+        status: "success",
       });
+    } catch (err) {
+      console.log(err);
+      return res.status(500).json({ msg: "Something went Wrong" });
+    }
+  } else {
+    return handleResponse(res, error, 400, `Please select a photo`);
   }
-);
+});
 
 //To get all banters
 router.route("/").get(async (req, res) => {
@@ -70,18 +78,32 @@ router.route("/").get(async (req, res) => {
 });
 
 //For Comments on Banter
-router
-  .route("/:id/comment")
-  .post(uploadMultiple.array("banterImage", 4), auth, async (req, res) => {
-    const reqFiles = [];
+router.route("/:id/comment").post(auth, async (req, res) => {
+  const reqFiles = [];
 
-    //If empty field - return eror
-    if (req.body.banter === "")
-      return res.status(400).json({ msg: "Banter cannot be empty" });
+  //If empty field - return eror
+  if (req.body.banter === "")
+    return res.status(400).json({ msg: "Banter cannot be empty" });
 
-    //Map through each file and push customize path to Array - reqFiles
-    for (var i = 0; i < req.files.length; i++) {
-      reqFiles.push("/BantedImages/BanterImages/" + req.files[i].filename);
+  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  if (!req.files || req.files === null || Object.keys(req.files).length === 0)
+    return handleResponse(res, error, 400, `Please select a photo`);
+
+  const image = req.files.banterImage;
+  if (image) {
+    if (!Array.isArray(image)) {
+      if (!prefferedTypes.includes(image.mimetype))
+        return handleResponse(res, error, 400, "Please select a valid photo");
+      const url = await uploadImage(image, "banter");
+      reqFiles.push(url);
+    } else {
+      //Map through each file and push customize path to Array - reqFiles
+      for (var i = 0; i < req.files.banterImage.length; i++) {
+        if (!prefferedTypes.includes(image[i].mimetype))
+          return handleResponse(res, error, 400, "Please select a valid photo");
+        const url = await uploadImage(image[i], "banter");
+        reqFiles.push(url);
+      }
     }
 
     try {
@@ -120,7 +142,10 @@ router
       console.log(err);
       return res.status(500).json({ error: "Something went wrong" });
     }
-  });
+  } else {
+    return handleResponse(res, error, 400, `Please select a photo`);
+  }
+});
 
 ///For Liking a banter
 router.route("/:id/like").get(auth, async (req, res) => {

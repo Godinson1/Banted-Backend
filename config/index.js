@@ -1,11 +1,11 @@
-import { Storage } from "@google-cloud/storage";
-import path from "path";
+const { Storage } = require("@google-cloud/storage");
+const path = require("path");
 
 const serviceKey = path.join(__dirname, "./keys.json");
 
 const storage = new Storage({
   keyFilename: serviceKey,
-  projectId: process.env.PROJECT_ID,
+  projectId: "banted",
 });
 
-export { storage };
+module.exports = { storage };
