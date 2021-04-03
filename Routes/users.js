@@ -9,7 +9,13 @@ const Banter = require("../models/bantModel");
 const Like = require("../models/likeModel");
 
 const { isEmail } = require("../Helpers/helper");
-const { success, error, handleResponse, uploadImage } = require("../Helpers");
+const {
+  success,
+  error,
+  handleResponse,
+  uploadImage,
+  NO_IMG,
+} = require("../Helpers");
 
 //Get authenticated user
 router.route("/").get(auth, async (req, res) => {
@@ -85,6 +91,7 @@ router.route("/register").post(async (req, res) => {
       password,
       followers: 0,
       following: 0,
+      userImage: NO_IMG,
     });
 
     //Hash password before saving to database

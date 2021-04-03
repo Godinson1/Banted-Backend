@@ -1,4 +1,4 @@
-const { success, error, handleResponse } = require("./constants");
+const { success, error, handleResponse, NO_IMG } = require("./constants");
 const { uploadImage } = require("./upload");
 
 module.exports = {
@@ -6,4 +6,5 @@ module.exports = {
   error,
   handleResponse,
   uploadImage,
+  NO_IMG,
 };
