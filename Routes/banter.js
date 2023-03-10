@@ -3,54 +3,29 @@ const Banter = require("../models/bantModel");
 const auth = require("../middleware/auth");
 const Comment = require("../models/commentModel");
 const Like = require("../models/likeModel");
-const { success, error, handleResponse, uploadImage } = require("../Helpers");
+const { banterEmitter, LIKE_EVENT } = require("../events/");
+const { success, getPhotoUrl } = require("../Helpers");
 
 //To upload banter
 router.post("/banter", auth, async (req, res) => {
-  const reqFiles = [];
-  if (req.body.banter === "")
-    return res.status(400).json({ msg: "Banter cannot be empty" });
+  if (req.body.banter === "") return res.status(400).json({ msg: "Banter cannot be empty" });
 
-  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
-
-  if (req.files && req.files.banterImage) {
-    const image = req.files.banterImage;
-    if (!Array.isArray(image)) {
-      if (!prefferedTypes.includes(image.mimetype))
-        return handleResponse(res, error, 400, "Please select a valid photo");
-      const url = await uploadImage(image, "banter");
-      reqFiles.push(url);
-    } else {
-      //Map through each file and push customize path to Array - reqFiles
-      for (var i = 0; i < req.files.banterImage.length; i++) {
-        if (!prefferedTypes.includes(image[i].mimetype))
-          return handleResponse(res, error, 400, "Please select a valid photo");
-        const url = await uploadImage(image[i], "banter");
-        reqFiles.push(url);
-      }
-    }
-  }
-
-  //Create new banter
-  const newBanter = {
+  const banterImageUrl = await getPhotoUrl(req, res);
+  const newBant = new Banter({
     banter: req.body.banter,
     banterHandle: req.user.handle,
     name: req.user.name,
-    banterImage: reqFiles,
+    banterImage: banterImageUrl,
     likeCount: 0,
     commentCount: 0,
     rebantCount: 0,
     userImage: req.user.userImage,
-  };
-  const newBant = new Banter(newBanter);
+  });
 
   try {
     const data = await newBant.save();
-    res.json({
-      data,
-      message: "Banter uploaded successfully",
-      status: success,
-    });
+    banterEmitter.emit("create", JSON.stringify(data));
+    res.json({ data, message: "Banter uploaded successfully", status: success });
   } catch (err) {
     console.log(err);
     return res.status(500).json({ msg: "Something went Wrong" });
@@ -60,13 +35,8 @@ router.post("/banter", auth, async (req, res) => {
 //To get all banters
 router.route("/").get(async (req, res) => {
   try {
-    //Get length of all banter
     const bantLength = await Banter.countDocuments({});
-
-    //Sort banter randomly and return banter
-    const randomBanter = await Banter.aggregate([
-      { $sample: { size: bantLength } },
-    ]);
+    const randomBanter = await Banter.aggregate([{ $sample: { size: bantLength } }]);
     return res.status(200).json(randomBanter);
   } catch (err) {
     console.log(err);
@@ -76,45 +46,18 @@ router.route("/").get(async (req, res) => {
 
 //For Comments on Banter
 router.route("/:id/comment").post(auth, async (req, res) => {
-  const reqFiles = [];
-
-  //If empty field - return eror
-  if (req.body.banter === "")
-    return res.status(400).json({ msg: "Banter cannot be empty" });
-
-  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
-
-  if (req.files && req.files.banterImage) {
-    const image = req.files.banterImage;
-    if (!Array.isArray(image)) {
-      if (!prefferedTypes.includes(image.mimetype))
-        return handleResponse(res, error, 400, "Please select a valid photo");
-      const url = await uploadImage(image, "banter");
-      reqFiles.push(url);
-    } else {
-      //Map through each file and push customize path to Array - reqFiles
-      for (var i = 0; i < req.files.banterImage.length; i++) {
-        if (!prefferedTypes.includes(image[i].mimetype))
-          return handleResponse(res, error, 400, "Please select a valid photo");
-        const url = await uploadImage(image[i], "banter");
-        reqFiles.push(url);
-      }
-    }
-  }
+  if (req.body.banter === "") return res.status(400).json({ msg: "Banter cannot be empty" });
 
   try {
-    //Check if banter exist
     const bant = await Banter.findById(req.params.id);
-    if (!bant) {
-      return res.status(404).json({ error: "Banter not found" });
-    }
+    if (!bant) return res.status(404).json({ error: "Banter not found" });
 
-    //Create new comment on banter
+    const banterImage = await getPhotoUrl(req, res);
     const newComment = new Comment({
       banter: req.body.banter,
       banterHandle: req.user.handle,
       name: req.user.name,
-      banterImage: reqFiles,
+      banterImage,
       likeCount: 0,
       commentCount: 0,
       rebantCount: 0,
@@ -122,16 +65,13 @@ router.route("/:id/comment").post(auth, async (req, res) => {
       userImage: req.user.userImage,
     });
 
-    //Save comment to database
     const comment = await newComment.save();
     bant.commentCount++;
     const data = await bant.save();
+    banterEmitter.emit("comment", JSON.stringify(data));
     return res.json({
       status: success,
-      data: {
-        data,
-        comment,
-      },
+      data: { data, comment },
       message: `You commented on ${bant.banterHandle}'s banter..`,
     });
   } catch (err) {
@@ -145,43 +85,23 @@ router.route("/:id/like").get(auth, async (req, res) => {
   let banterData;
 
   try {
-    //Check for banter
     const banter = await Banter.findById(req.params.id);
+    if (!banter) return res.status(404).json({ banter: "Banter not found!" });
 
-    if (banter) {
-      banterData = banter;
-      banterData.banterId = banter._id;
-    } else {
-      return res.status(404).json({ banter: "Banter not found!" });
-    }
+    banterData = banter;
+    banterData.banterId = banter._id;
 
-    //Check if liked
     const likeDocument = await Like.findOne({
-      $and: [
-        { userHandle: { $eq: req.user.handle } },
-        { banterId: { $eq: req.params.id } },
-      ],
+      $and: [{ userHandle: { $eq: req.user.handle } }, { banterId: { $eq: req.params.id } }],
     });
+    if (likeDocument) return res.status(400).json({ error: "Banter already liked" });
 
-    if (likeDocument === null) {
-      const likes = new Like({
-        banterId: req.params.id,
-        userHandle: req.user.handle,
-      });
-      const likeData = await likes.save();
-      banterData.likeCount++;
-      await banterData.save();
-      return res.status(200).json({
-        status: success,
-        message: "Banter liked successfully",
-        data: {
-          data: banterData,
-          like: likeData,
-        },
-      });
-    } else {
-      return res.status(400).json({ error: "Banter already liked" });
-    }
+    const like = new Like({ banterId: req.params.id, userHandle: req.user.handle });
+    const likeData = await like.save();
+    banterData.likeCount++;
+    await banterData.save();
+    banterEmitter.emit(LIKE_EVENT, { data: banterData, like: likeData });
+    return res.status(200).json({ status: success, message: "Banter liked successfully", data: { data: banterData, like: likeData } });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Something went wrong!" });
@@ -192,35 +112,23 @@ router.route("/:id/like").get(auth, async (req, res) => {
 router.route("/:id/unlike").get(auth, async (req, res) => {
   let banterData;
   try {
-    //Check for banter
     const banter = await Banter.findById(req.params.id);
-    if (banter) {
-      banterData = banter;
-      banterData.banterId = banter._id;
-    } else {
-      return res.status(404).json({ banter: "Banter not found!" });
-    }
+    if (!banter) return res.status(404).json({ banter: "Banter not found!" });
 
-    //Check for like document and delete (unlike)
+    banterData = banter;
+    banterData.banterId = banter._id;
+
     const like = await Like.find({
-      $and: [
-        { userHandle: { $eq: req.user.handle } },
-        { banterId: { $eq: req.params.id } },
-      ],
+      $and: [{ userHandle: { $eq: req.user.handle } }, { banterId: { $eq: req.params.id } }],
     });
-    if (like === "") {
+
+    if (like === "" || banterData.likeCount <= 0) {
       return res.status(400).json({ error: "Banter not liked" });
     } else {
       await Like.deleteOne({ userHandle: { $eq: req.user.handle } });
       banterData.likeCount--;
       await banterData.save();
-      return res.status(200).json({
-        status: success,
-        message: "Banter unliked successfully",
-        data: {
-          data: banterData,
-        },
-      });
+      return res.status(200).json({ status: success, message: "Banter unliked successfully", data: { data: banterData } });
     }
   } catch (err) {
     console.error(err);
@@ -232,19 +140,13 @@ router.route("/:id/unlike").get(auth, async (req, res) => {
 router.route("/:id").get(auth, async (req, res) => {
   let banterData;
   try {
-    //Check for banter
     const banter = await Banter.findById(req.params.id);
-    if (banter) {
-      banterData = banter;
-      banterData.banterId = banter._id;
-    } else {
-      return res.status(404).json({ banter: "Banter not found!" });
-    }
+    if (!banter) return res.status(404).json({ banter: "Banter not found!" });
 
-    //Check for comments
-    const comments = await Comment.find({
-      banterId: { $eq: req.params.id },
-    }).sort({ createdAt: -1 });
+    banterData = banter;
+    banterData.banterId = banter._id;
+
+    const comments = await Comment.find({ banterId: { $eq: req.params.id } }).sort({ createdAt: -1 });
     return res.status(200).json({ banterData, comments });
   } catch (err) {
     console.error(err);
@@ -256,19 +158,12 @@ router.route("/:id").get(auth, async (req, res) => {
 router.route("/:id").delete(auth, async (req, res) => {
   try {
     const bant = await Banter.findById(req.params.id);
-    if (!bant) {
-      return res.status(404).json({ error: "Banter not found" });
-    }
+    if (!bant) return res.status(404).json({ error: "Banter not found" });
 
-    if (bant.banterHandle !== req.user.handle) {
-      res.status(403).json({ error: "Unauthorised" });
-    } else {
+    if (bant.banterHandle !== req.user.handle) return res.status(403).json({ error: "Unauthorised" });
+    else {
       await Banter.deleteOne({ _id: { $eq: req.params.id } });
-      return res.status(200).json({
-        status: success,
-        data: bant,
-        message: "Banter deleted successfully!",
-      });
+      return res.status(200).json({ status: success, data: bant, message: "Banter deleted successfully!" });
     }
   } catch (err) {
     console.error(err);

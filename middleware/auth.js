@@ -1,16 +1,11 @@
-const config = require("config");
 const jwt = require("jsonwebtoken");
 
 const auth = (req, res, next) => {
   const token = req.header("banted-token");
-
-  if (!token)
-    return res
-      .status(401)
-      .json({ status: "error", message: "Sorry, No Authorization!" });
+  if (!token) return res.status(401).json({ status: "error", message: "Sorry, No Authorization!" });
 
   try {
-    const decoded = jwt.verify(token, config.get("jwt_Secret"));
+    const decoded = jwt.verify(token, process.env.jwt_secret);
     req.user = decoded;
     next();
   } catch (e) {

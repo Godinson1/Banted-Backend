@@ -1,6 +1,0 @@
-{
-  "ATLAS_URI": "mongodb+srv://goddy123:goddy123@cluster0-8h7wy.gcp.mongodb.net/test?retryWrites=true&w=majority",
-  "jwt_Secret": "saJwtSecret",
-  "pusher_Secret": "b76001b3f4edb82d9927",
-  "pusher_Key": "ff6e8b5bae84541857cb"
-}

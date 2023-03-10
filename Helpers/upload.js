@@ -1,43 +1,57 @@
-const util = require("util");
-const { storage } = require("../config");
-const bucket = storage.bucket("banted-storage");
+require("dotenv").config();
+const { v2: cloudinary } = require("cloudinary");
+const streamifier = require("streamifier");
+const { handleResponse } = require("./constants");
 
-/**
- *
- * @param { File } object file object that will be uploaded
- * @description - This function does the following
- * - It uploads a file to the image bucket on Google Cloud
- * - It accepts an object as an argument with the
- *   name of file and buffer
- */
+cloudinary.config({
+  cloud_name: `${process.env.cloudinaryName}`,
+  api_key: `${process.env.cloudinaryApiKey}`,
+  api_secret: `${process.env.cloudinarySecretKey}`,
+  secure: true,
+});
 
-const uploadImage = (file, type) =>
-  new Promise((resolve, reject) => {
-    const { name, data } = file;
-
-    const blob = bucket.file(
-      type === "profile"
-        ? "profile/" + name.replace(/ /g, "_")
-        : "banterImages/" + name.replace(/ /g, "_")
-    );
-    const blobStream = blob.createWriteStream({
-      resumable: false,
-      gzip: true,
+const uploadFromBuffer = (data) => {
+  return new Promise((resolve, reject) => {
+    const cld_upload_stream = cloudinary.uploader.upload_stream({ folder: "Images" }, (error, result) => {
+      if (result) {
+        resolve(result);
+      } else {
+        reject(error);
+      }
     });
-    blobStream
-      .on("finish", () => {
-        const publicUrl = util.format(
-          `https://storage.googleapis.com/${bucket.name}/${blob.name}`
-        );
-        resolve(publicUrl);
-      })
-      .on("error", (err) => {
-        console.log(err);
-        reject(`Unable to upload image, something went wrong`);
-      })
-      .end(data);
+
+    streamifier.createReadStream(data).pipe(cld_upload_stream);
   });
+};
+
+const uploadImageCloudinary = async (file) => {
+  const result = await uploadFromBuffer(file.data);
+  return result.url;
+};
+
+const getPhotoUrl = async (req, res) => {
+  const reqFiles = [];
+  const prefferedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  if (req.files && req.files.banterImage) {
+    const image = req.files.banterImage;
+    if (!Array.isArray(image)) {
+      if (!prefferedTypes.includes(image.mimetype))
+        return handleResponse(res, error, 400, "Please select a valid photo");
+      const url = await uploadImageCloudinary(image);
+      reqFiles.push(url);
+    } else {
+      for (var i = 0; i < req.files.banterImage.length; i++) {
+        if (!prefferedTypes.includes(image[i].mimetype))
+          return handleResponse(res, error, 400, "Please select a valid photo");
+        const url = await uploadImageCloudinary(image[i]);
+        reqFiles.push(url);
+      }
+    }
+  }
+  return reqFiles;
+};
 
 module.exports = {
-  uploadImage,
+  getPhotoUrl,
+  uploadImageCloudinary,
 };

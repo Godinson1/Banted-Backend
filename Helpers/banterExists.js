@@ -1,7 +1,5 @@
 const Banter = require("../models/bantModel");
 
-//Check for existing banter
-
 const banterExist = async (res, id) => {
   let banterData;
   const banter = await Banter.findById(id);
